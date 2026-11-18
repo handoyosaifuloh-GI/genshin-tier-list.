@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genshin Impact — Editable Tier List</title>
+<style>
+:root{--bg:#10151f;--panel:#1b2432;--panel2:#222e40;--text:#edf3fb;--muted:#9eacc0;--line:#35445a;--gold:#e6bd65}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Arial,sans-serif}
+header{padding:24px clamp(14px,4vw,42px);background:linear-gradient(120deg,#25364b,#17202d);border-bottom:1px solid var(--line)}
+h1{margin:0 0 6px;font-size:clamp(22px,4vw,32px)}header p{margin:0;color:var(--muted)}
+main{padding:20px clamp(10px,3vw,32px);max-width:1600px;margin:auto}
+.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:15px}
+input,select,button{font:inherit;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#121a26;color:var(--text)}
+input:focus,select:focus{outline:2px solid #8ab4e8}button{cursor:pointer;background:#30445e}button:hover{filter:brightness(1.15)}
+#search{flex:1;min-width:190px}.hint{color:var(--muted);font-size:12px;margin:8px 0 14px}
+.tier{margin:14px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+.tier-head{display:flex;align-items:center;gap:10px;padding:10px 13px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tier-head strong{font-size:18px;min-width:26px;color:var(--gold)}.tier-head span{color:var(--muted);font-size:12px}
+.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:1050px}
+th,td{padding:8px 7px;border-bottom:1px solid var(--line);text-align:center}
+th{position:sticky;top:0;background:#202c3d;color:#cbd7e7;font-size:12px;white-space:nowrap}
+td input,td select{width:100%;min-width:68px;padding:7px 5px;text-align:center}
+td.char{text-align:left;min-width:205px} .charbox{display:flex;align-items:center;gap:10px}
+.portrait{width:52px;height:52px;flex:0 0 52px;object-fit:cover;border-radius:9px;background:#303b4c;border:1px solid var(--line);color:var(--muted)}
+.name{font-weight:650}.sub{font-size:11px;color:var(--muted)}
+.delete{padding:6px 9px;background:#633b42}
+#status{color:var(--muted);font-size:12px;margin-left:auto}
+@media(max-width:700px){
+ header{padding:18px 14px}
+ main{padding:14px 10px}
+ .toolbar{gap:7px}
+ .toolbar>*{flex:1 1 calc(50% - 7px);min-width:0}
+ #search{flex-basis:100%;min-width:0}
+ #status{flex-basis:100%;width:100%;margin-left:0}
+ .tier{margin:12px 0;border-radius:10px}
+ .tier-head{padding:9px 11px}
+ .table-wrap{overflow:visible}
+ table{min-width:0;width:100%;display:block}
+ thead{display:none}
+ tbody{display:grid;grid-template-columns:1fr;gap:9px;padding:9px}
+ tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px;border:1px solid var(--line);border-radius:9px;background:#182231}
+ td{min-width:0;padding:0;border:0;text-align:left}
+ td.char{grid-column:1/-1;min-width:0;padding-bottom:7px;border-bottom:1px solid var(--line)}
+ .charbox{gap:9px}
+ .portrait{width:46px;height:46px;flex:0 0 46px}
+ td:not(.char):not(:last-child)::before{content:attr(data-label);display:block;margin:0 0 3px;color:var(--muted);font-size:10px;font-weight:600}
+ td input,td select{min-width:0;width:100%;padding:8px 5px;text-align:left}
+ td:last-child{grid-column:1/-1}
+ .delete{width:100%;padding:8px}
+}
+@media(min-width:420px) and (max-width:700px){
+ tbody{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Genshin Impact — Tier List</h1>
+<p>Tabel karakter yang bisa diedit: tier, ATK, CRIT Rate, CRIT DMG, HP, Elemental Mastery, dan DEF.</p>
+</header>
+<main>
+<div class="toolbar">
+<input id="search" placeholder="Cari nama karakter..." aria-label="Cari karakter">
+<select id="filter"><option value="all">Semua tier</option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Belum dinilai</option></select>
+<button id="add">＋ Tambah karakter</button>
+<button id="export">Ekspor JSON</button>
+<button id="import">Impor JSON</button>
+<button id="reset">Reset data</button>
+<input type="file" id="file" accept="application/json" hidden>
+<span id="status">Memuat daftar karakter…</span>
+</div>
+<div class="hint">Nilai statistik sengaja dikosongkan: statistik aktual bergantung pada level, senjata, artefak, buff, dan build. Klik kolom untuk mengubahnya. Perubahan tersimpan otomatis di browser ini.</div>
+<div id="tiers"></div>
+</main>
+<script>
+const tiers=['S','A','B','C','D','Belum dinilai'];
+const storeKey='genshin-editable-tier-list-v1';
+let characters=[];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fallbackCharacterImage(img){
+ const name=img.alt||'Karakter';
+ const id=img.closest('.charbox')?.querySelector('.name')?.textContent||'';
+ if(img.dataset.fallback!=='1' && img.src.includes('/icon-big')){
+  img.dataset.fallback='1';
+  img.src=img.src.replace('/icon-big','/icon');
+  return;
+ }
+ img.onerror=null;
+ img.removeAttribute('src');
+ img.alt=name+' (gambar tidak tersedia)';
+ img.style.objectFit='contain';
+ img.style.padding='5px';
+ img.style.background='#303b4c';
+ img.src='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="12" fill="#303b4c"/><text x="50" y="58" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="bold" fill="#edf3fb">'+(id||name).trim().charAt(0).toUpperCase()+'</text></svg>'
+ );
+}
+function save(){localStorage.setItem(storeKey,JSON.stringify(characters));}
+function render(){
+ const query=document.getElementById('search').value.toLowerCase();
+ const filter=document.getElementById('filter').value;
+ const root=document.getElementById('tiers');root.innerHTML='';
+ tiers.forEach(t=>{
+  if(filter!=='all'&&filter!==t)return;
+  const rows=characters.filter(c=>(c.name.toLowerCase().includes(query))&&c.tier===t);
+  if(!rows.length && (query||filter!=='all'))return;
+  const section=document.createElement('section');section.className='tier';
+  section.innerHTML=`<div class="tier-head"><strong>${t==='Belum dinilai'?'—':t}</strong><b>${t==='Belum dinilai'?'Belum dinilai':'Tier '+t}</b><span>${rows.length} karakter</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Karakter</th><th>Tier</th><th>ATK</th><th>CRIT Rate (%)</th><th>CRIT DMG (%)</th><th>HP</th><th>Elemental Mastery</th><th>DEF</th><th>Aksi</th></tr></thead><tbody></tbody></table></div>`;
+  const body=section.querySelector('tbody');
+  rows.forEach(c=>{
+   const tr=document.createElement('tr');
+   tr.innerHTML=`<td class="char"><div class="charbox"><img class="portrait" src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" referrerpolicy="no-referrer" data-fallback="0" onerror="fallbackCharacterImage(this)"><div><div class="name">${esc(c.name)}</div><div class="sub">${esc(c.element||'')} ${c.weapon?'· '+esc(c.weapon):''}</div></div></div></td>
+   <td data-label="Tier"><select data-id="${esc(c.id)}" data-key="tier">${tiers.map(t=>`<option ${c.tier===t?'selected':''}>${t}</option>`).join('')}</select></td>
+   ${[['atk','ATK'],['critRate','CRIT Rate (%)'],['critDmg','CRIT DMG (%)'],['hp','HP'],['em','Elemental Mastery'],['def','DEF']].map(([k,label])=>`<td data-label="${label}"><input type="number" min="0" step="any" placeholder="—" value="${esc(c[k])}" data-id="${esc(c.id)}" data-key="${k}"></td>`).join('')}
+   <td><button class="delete" data-delete="${esc(c.id)}" title="Hapus karakter">Hapus</button></td>`;
+   body.appendChild(tr);
+  });
+  root.appendChild(section);
+ });
+}
+document.addEventListener('change',e=>{
+ const el=e.target;if(!el.dataset.id||!el.dataset.key)return;
+ const c=characters.find(x=>x.id===el.dataset.id);if(!c)return;
+ c[el.dataset.key]=el.dataset.key==='tier'?el.value:(el.value===''?'':Number(el.value));save();render();
+});
+document.addEventListener('click',e=>{
+ const id=e.target.dataset.delete;if(!id)return;
+ characters=characters.filter(c=>c.id!==id);save();render();
+});
+document.getElementById('search').addEventListener('input',render);
+document.getElementById('filter').addEventListener('change',render);
+document.getElementById('add').onclick=()=>{
+ const name=prompt('Nama karakter:');if(!name)return;
+ const id='custom-'+Date.now();characters.push({id,name,image:'',element:'',weapon:'',tier:'Belum dinilai',atk:'',critRate:'',critDmg:'',hp:'',em:'',def:''});save();render();
+};
+document.getElementById('export').onclick=()=>{
+ const blob=new Blob([JSON.stringify(characters,null,2)],{type:'application/json'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='genshin-tier-list.json';a.click();URL.revokeObjectURL(a.href);
+};
+document.getElementById('import').onclick=()=>document.getElementById('file').click();
+document.getElementById('file').onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ try{const data=JSON.parse(await f.text());if(!Array.isArray(data))throw Error();characters=data;save();render();document.getElementById('status').textContent='Data berhasil diimpor';}
+ catch{alert('File JSON tidak valid.');}
+ e.target.value='';
+};
+document.getElementById('reset').onclick=()=>{
+ if(confirm('Hapus perubahan lokal dan muat ulang daftar karakter?')){localStorage.removeItem(storeKey);location.reload();}
+};
+async function load(){
+ try{
+  const r=await fetch('https://genshin.jmp.blue/characters/all');
+  if(!r.ok)throw Error('API tidak tersedia');
+  const data=await r.json();
+  const saved=JSON.parse(localStorage.getItem(storeKey)||'null');
+  const base=data.map(x=>{
+   const id=typeof x==='string'?x:x.name;
+   const label=id.replace(/-/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+   return {id,name:label,image:`https://genshin.jmp.blue/characters/${encodeURIComponent(id)}/icon-big`,
+    element:'',weapon:'',tier:'Belum dinilai',atk:'',critRate:'',critDmg:'',hp:'',em:'',def:''};
+  });
+  if(saved){
+   const map=new Map(saved.map(x=>[x.id,x]));
+   characters=base.map(x=>({...x,...(map.get(x.id)||{})}));
+   saved.filter(x=>!base.some(b=>b.id===x.id)).forEach(x=>characters.push(x));
+  }else characters=base;
+  document.getElementById('status').textContent=`${characters.length} karakter dimuat`;
+  render();
+ }catch(err){
+  const saved=JSON.parse(localStorage.getItem(storeKey)||'[]');
+  characters=saved;
+  document.getElementById('status').textContent='Gagal memuat API. Periksa internet, lalu muat ulang halaman.';
+  render();
+ }
+}
+load();
+</script>
+</body>
+</html>
